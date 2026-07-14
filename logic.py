@@ -2,7 +2,7 @@
 Thread logique métier : c'est le SEUL fichier où doivent vivre les règles.
 
 Logique (simple) :
-- DOL Trip actif -> coupe TOUT le CIP (cutting + hybrid left + hybrid right).
+- DOL Trip actif -> coupe TOUT le CIP (cutting + gutting left + gutting right).
 - Sinon, chaque sortie CIP suit en miroir l'état ON/OFF de sa machine
   (Hybrid Left ON -> CIP Left ON, etc.), défini dans config.CIP_MIRROR.
 - Le cutting suit le DOL Cutting ON/OFF.

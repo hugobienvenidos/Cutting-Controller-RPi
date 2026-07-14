@@ -22,8 +22,10 @@ MODBUS_DEVICES = {
     "vfd1": 1,           # Belt pocket
     "vfd2": 2,           # Belt infeed
     "cutting_controller": 30,  # ESP32-S3 Fish Cutting/Gutting Controller
-    "hybrid_left": 10,   # ESP32 - DOL/CIP Timer/compteurs/belly Left
-    "hybrid_right": 11,  # ESP32 - idem côté droit
+    "gutting_left": 10,   # Gutting Machine gauche : DOL ON/OFF, CIP Timer, belly %
+    "gutting_right": 11,  # Gutting Machine droite : idem
+    "vision_left": 12,    # Vision System gauche : fish counter, good/bad
+    "vision_right": 13,   # Vision System droite : idem
     "elec_meter": 20,
     "water_meter": 21,
 }
@@ -61,14 +63,14 @@ def modicon_offset(address: int) -> int:
 
 
 # --- Miroir direct état machine -> sortie CIP ---
-# "on_status_address" = adresse Modicon telle que documentée sur la machine.
+# "on_status_address" = adresse Modicon telle que documentée sur la Gutting Machine.
 CIP_MIRROR = {
-    "hybrid_left": {
+    "gutting_left": {
         "on_status_address": 40010,
         "register_type": "holding",       # holding | input | coil | discrete
         "cip_output": "cip_hybrid_left",
     },
-    "hybrid_right": {
+    "gutting_right": {
         "on_status_address": 40011,        # à corriger avec la vraie adresse
         "register_type": "holding",
         "cip_output": "cip_hybrid_right",
@@ -104,14 +106,21 @@ CUTTING_CONTROLLER_REGISTERS = {
 }
 
 
-HYBRID_REGISTERS = {
-    "input_start": 2,           # premier input register à lire
-    "input_count": 4,
+# --- Registres Gutting Machine (belly %) et Vision System (compteurs) ---
+# Offsets à vérifier avec la doc réelle de chaque machine (valeurs de départ ici).
+GUTTING_REGISTERS = {
+    "input_start": 2,           # premier input register à lire (belly %)
+    "input_count": 1,
+    "belly_pct_offset": 0,
+    "belly_pct_scale": 100,
+}
+
+VISION_REGISTERS = {
+    "input_start": 0,           # premier input register à lire (compteurs)
+    "input_count": 3,
     "fish_counter_offset": 0,
     "good_offset": 1,
     "bad_offset": 2,
-    "belly_pct_offset": 3,
-    "belly_pct_scale": 100,
 }
 
 VFD_REGISTERS = {

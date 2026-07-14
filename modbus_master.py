@@ -1,6 +1,7 @@
 """
 Thread Modbus RTU maître : interroge les esclaves sur le bus RS485
-(VFD1, VFD2, Hybrid Left, Hybrid Right, compteurs électricité/eau).
+(VFD1, VFD2, Cutting Controller, Gutting Machine Left/Right,
+Vision System Left/Right, compteurs électricité/eau).
 
 NOTE API pymodbus (>=3.14) : count et l'identifiant esclave sont keyword-only
 et se nomment "device_id" (anciennement "slave"). Voir requirements.txt.
@@ -14,8 +15,8 @@ from pymodbus.client import ModbusSerialClient
 
 from config import (
     SERIAL_PORT, BAUDRATE, PARITY, STOPBITS, BYTESIZE, MODBUS_TIMEOUT,
-    MODBUS_DEVICES, MODBUS_POLL_INTERVAL, HYBRID_REGISTERS, VFD_REGISTERS,
-    CIP_MIRROR, modicon_offset, CUTTING_CONTROLLER_REGISTERS,
+    MODBUS_DEVICES, MODBUS_POLL_INTERVAL, GUTTING_REGISTERS, VISION_REGISTERS,
+    VFD_REGISTERS, CIP_MIRROR, modicon_offset, CUTTING_CONTROLLER_REGISTERS,
 )
 from shared_state import SharedState
 
@@ -42,9 +43,9 @@ def _read_onoff_status(client: ModbusSerialClient, addr: int, mirror_cfg: dict) 
     raise ValueError(f"register_type inconnu: {rtype}")
 
 
-def _read_hybrid(client: ModbusSerialClient, addr: int, device_name: str) -> dict | None:
-    """Lit l'état d'un contrôleur Hybrid Left/Right (statut ON + diagnostics)."""
-    r = HYBRID_REGISTERS
+def _read_gutting(client: ModbusSerialClient, addr: int, device_name: str) -> dict | None:
+    """Lit l'état d'une Gutting Machine (statut ON via CIP_MIRROR + belly %)."""
+    r = GUTTING_REGISTERS
     regs = client.read_input_registers(r["input_start"], count=r["input_count"], device_id=addr)
     if regs.isError():
         return None
@@ -55,10 +56,20 @@ def _read_hybrid(client: ModbusSerialClient, addr: int, device_name: str) -> dic
 
     return {
         "onoff": onoff,
+        "belly_pct": regs.registers[r["belly_pct_offset"]] / r["belly_pct_scale"],
+    }
+
+
+def _read_vision(client: ModbusSerialClient, addr: int) -> dict | None:
+    """Lit les compteurs d'un Vision System (fish counter, good/bad)."""
+    r = VISION_REGISTERS
+    regs = client.read_input_registers(r["input_start"], count=r["input_count"], device_id=addr)
+    if regs.isError():
+        return None
+    return {
         "fish_counter": regs.registers[r["fish_counter_offset"]],
         "good": regs.registers[r["good_offset"]],
         "bad": regs.registers[r["bad_offset"]],
-        "belly_pct": regs.registers[r["belly_pct_offset"]] / r["belly_pct_scale"],
     }
 
 
@@ -133,8 +144,10 @@ def modbus_thread(state: SharedState, stop_event: threading.Event):
                 try:
                     if name == "cutting_controller":
                         data = _read_cutting_controller(client, addr)
-                    elif "hybrid" in name:
-                        data = _read_hybrid(client, addr, name)
+                    elif "gutting" in name:
+                        data = _read_gutting(client, addr, name)
+                    elif "vision" in name:
+                        data = _read_vision(client, addr)
                     elif "vfd" in name:
                         data = _read_vfd(client, addr)
                     else:

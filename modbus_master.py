@@ -1,6 +1,9 @@
 """
 Thread Modbus RTU maître : interroge les esclaves sur le bus RS485
 (VFD1, VFD2, Hybrid Left, Hybrid Right, compteurs électricité/eau).
+
+NOTE API pymodbus (>=3.14) : count et l'identifiant esclave sont keyword-only
+et se nomment "device_id" (anciennement "slave"). Voir requirements.txt.
 """
 
 import logging
@@ -25,16 +28,16 @@ def _read_onoff_status(client: ModbusSerialClient, addr: int, mirror_cfg: dict) 
     rtype = mirror_cfg["register_type"]
 
     if rtype == "holding":
-        res = client.read_holding_registers(offset, 1, addr)
+        res = client.read_holding_registers(offset, count=1, device_id=addr)
         return bool(res.registers[0]) if not res.isError() else None
     if rtype == "input":
-        res = client.read_input_registers(offset, 1, addr)
+        res = client.read_input_registers(offset, count=1, device_id=addr)
         return bool(res.registers[0]) if not res.isError() else None
     if rtype == "coil":
-        res = client.read_coils(offset, 1, addr)
+        res = client.read_coils(offset, count=1, device_id=addr)
         return res.bits[0] if not res.isError() else None
     if rtype == "discrete":
-        res = client.read_discrete_inputs(offset, 1, addr)
+        res = client.read_discrete_inputs(offset, count=1, device_id=addr)
         return res.bits[0] if not res.isError() else None
     raise ValueError(f"register_type inconnu: {rtype}")
 
@@ -42,7 +45,7 @@ def _read_onoff_status(client: ModbusSerialClient, addr: int, mirror_cfg: dict) 
 def _read_hybrid(client: ModbusSerialClient, addr: int, device_name: str) -> dict | None:
     """Lit l'état d'un contrôleur Hybrid Left/Right (statut ON + diagnostics)."""
     r = HYBRID_REGISTERS
-    regs = client.read_input_registers(r["input_start"], r["input_count"], addr)
+    regs = client.read_input_registers(r["input_start"], count=r["input_count"], device_id=addr)
     if regs.isError():
         return None
 
@@ -62,7 +65,7 @@ def _read_hybrid(client: ModbusSerialClient, addr: int, device_name: str) -> dic
 def _read_vfd(client: ModbusSerialClient, addr: int) -> dict | None:
     """Lit vitesse + état ON/OFF d'un variateur (registres à adapter selon la doc du VFD)."""
     r = VFD_REGISTERS
-    regs = client.read_holding_registers(r["holding_start"], r["holding_count"], addr)
+    regs = client.read_holding_registers(r["holding_start"], count=r["holding_count"], device_id=addr)
     if regs.isError():
         return None
     return {
@@ -74,7 +77,7 @@ def _read_vfd(client: ModbusSerialClient, addr: int) -> dict | None:
 def _read_cutting_controller(client: ModbusSerialClient, addr: int) -> dict | None:
     """Lit la télémétrie du Cutting/Gutting Controller (ESP32-S3). CIP volontairement ignoré."""
     r = CUTTING_CONTROLLER_REGISTERS
-    regs = client.read_input_registers(r["input_start"], r["input_count"], addr)
+    regs = client.read_input_registers(r["input_start"], count=r["input_count"], device_id=addr)
     if regs.isError():
         return None
     reg = regs.registers
@@ -154,8 +157,8 @@ def modbus_thread(state: SharedState, stop_event: threading.Event):
 
 
 def write_vfd_speed(client: ModbusSerialClient, addr: int, speed_rpm: int):
-    client.write_register(VFD_REGISTERS["speed_offset"], speed_rpm, addr)
+    client.write_register(VFD_REGISTERS["speed_offset"], speed_rpm, device_id=addr)
 
 
 def write_vfd_onoff(client: ModbusSerialClient, addr: int, state_on: bool):
-    client.write_register(VFD_REGISTERS["onoff_offset"], 1 if state_on else 0, addr)
+    client.write_register(VFD_REGISTERS["onoff_offset"], 1 if state_on else 0, device_id=addr)

@@ -12,7 +12,7 @@ from pymodbus.client import ModbusSerialClient
 from config import (
     SERIAL_PORT, BAUDRATE, PARITY, STOPBITS, BYTESIZE, MODBUS_TIMEOUT,
     MODBUS_DEVICES, MODBUS_POLL_INTERVAL, HYBRID_REGISTERS, VFD_REGISTERS,
-    CIP_MIRROR, modicon_offset,
+    CIP_MIRROR, modicon_offset, CUTTING_CONTROLLER_REGISTERS,
 )
 from shared_state import SharedState
 
@@ -71,6 +71,30 @@ def _read_vfd(client: ModbusSerialClient, addr: int) -> dict | None:
     }
 
 
+def _read_cutting_controller(client: ModbusSerialClient, addr: int) -> dict | None:
+    """Lit la télémétrie du Cutting/Gutting Controller (ESP32-S3). CIP volontairement ignoré."""
+    r = CUTTING_CONTROLLER_REGISTERS
+    regs = client.read_input_registers(r["input_start"], count=r["input_count"], slave=addr)
+    if regs.isError():
+        return None
+    reg = regs.registers
+    return {
+        "rpm_blade": reg[r["rpm_blade_offset"]],
+        "rpm_wheel1": reg[r["rpm_wheel1_offset"]],
+        "rpm_wheel2": reg[r["rpm_wheel2_offset"]],
+        "ejector_state": reg[r["ejector_state_offset"]],  # 0 idle, 1 wait, 2 fire
+        "ejector_count": reg[r["ejector_count_lo_offset"]] | (reg[r["ejector_count_hi_offset"]] << 16),
+        "motor_trip": bool(reg[r["motor_trip_offset"]]),
+        "motor_on": bool(reg[r["motor_on_offset"]]),
+        "belt": bool(reg[r["belt_offset"]]),
+        "belly": bool(reg[r["belly_offset"]]),
+        "alarm_mask": reg[r["alarm_mask_offset"]],
+        "alarm_unack": reg[r["alarm_unack_offset"]],
+        "uptime_s": reg[r["uptime_lo_offset"]] | (reg[r["uptime_hi_offset"]] << 16),
+        "fw_version": reg[r["fw_version_offset"]],
+    }
+
+
 def modbus_thread(state: SharedState, stop_event: threading.Event):
     client = ModbusSerialClient(
         port=SERIAL_PORT, baudrate=BAUDRATE, parity=PARITY,
@@ -104,7 +128,9 @@ def modbus_thread(state: SharedState, stop_event: threading.Event):
             # 2. Puis lit l'état de chaque esclave
             for name, addr in MODBUS_DEVICES.items():
                 try:
-                    if "hybrid" in name:
+                    if name == "cutting_controller":
+                        data = _read_cutting_controller(client, addr)
+                    elif "hybrid" in name:
                         data = _read_hybrid(client, addr, name)
                     elif "vfd" in name:
                         data = _read_vfd(client, addr)

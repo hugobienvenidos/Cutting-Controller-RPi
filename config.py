@@ -11,12 +11,17 @@ BAUDRATE = 9600
 PARITY = "N"
 STOPBITS = 1
 BYTESIZE = 8
-MODBUS_TIMEOUT = 1.0            # secondes
+MODBUS_TIMEOUT = 1.0
 
 # --- Adresses esclaves Modbus ---
+# NOTE : le Cutting Controller (ESP32) est déployé par défaut en MB_SLAVE_ID=1 /
+# 19200 8E1 dans son config.h -> il faudra changer ces deux constantes côté
+# firmware (MB_SLAVE_ID -> 30, MB_BAUD -> 9600, MB_CONFIG -> SERIAL_8N1) pour
+# matcher le bus existant, puisque vfd1 occupe déjà l'adresse 1.
 MODBUS_DEVICES = {
     "vfd1": 1,           # Belt pocket
     "vfd2": 2,           # Belt infeed
+    "cutting_controller": 30,  # ESP32-S3 Fish Cutting/Gutting Controller
     "hybrid_left": 10,   # ESP32 - DOL/CIP Timer/compteurs/belly Left
     "hybrid_right": 11,  # ESP32 - idem côté droit
     "elec_meter": 20,
@@ -70,7 +75,35 @@ CIP_MIRROR = {
     },
 }
 
-# --- Registres de diagnostic (fish counter, good/bad, belly %) ---
+# --- Cutting/Gutting Controller (ESP32-S3, monitoring télémétrie uniquement) ---
+# CIP volontairement absent : c'est la RPI qui pilote le CIP cutting (cip_cutting),
+# pas ce contrôleur -> on ignore IR_CIP_STATE / HR_CIP_ON / HR_CIP_OFF / CO_CIP_ENABLE.
+CUTTING_CONTROLLER_REGISTERS = {
+    "input_start": 0,
+    "input_count": 19,  # IR_COUNT du firmware (0..18)
+    # offsets dans le bloc lu (correspondent à l'enum IR_* du firmware) :
+    "rpm_blade_offset": 0,
+    "rpm_wheel1_offset": 1,
+    "rpm_wheel2_offset": 2,
+    "inputs_mask_offset": 3,
+    "outputs_mask_offset": 4,
+    "ejector_state_offset": 5,     # 0 idle, 1 wait, 2 fire
+    "ejector_count_lo_offset": 6,
+    "ejector_count_hi_offset": 7,
+    # offset 8 = IR_CIP_STATE -> ignoré volontairement
+    "motor_trip_offset": 9,
+    "motor_on_offset": 10,
+    "belt_offset": 11,
+    "belly_offset": 12,
+    "alarm_mask_offset": 13,
+    "alarm_unack_offset": 14,
+    "sys_state_offset": 15,
+    "uptime_lo_offset": 16,
+    "uptime_hi_offset": 17,
+    "fw_version_offset": 18,
+}
+
+
 HYBRID_REGISTERS = {
     "input_start": 2,           # premier input register à lire
     "input_count": 4,

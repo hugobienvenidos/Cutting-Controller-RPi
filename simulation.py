@@ -1,9 +1,11 @@
 """
 simulator.py — Simulateur Modbus RTU pour tester le contrôleur Fish3 sans matériel réel.
 
-Simule TOUS les esclaves définis dans config.MODBUS_DEVICES (VFD1/2, Cutting
-Controller, Gutting Left/Right, Vision Left/Right) sur un seul bus RS485
-virtuel, avec une interface graphique pour piloter/afficher chaque registre.
+Simule TOUS les esclaves définis dans config.MODBUS_DEVICES (VFD1/2,
+Gutting Left/Right, Vision Left/Right) sur un seul bus RS485 virtuel,
+avec une interface graphique pour piloter/afficher chaque registre.
+
+Adresses conformes à Modbus_Addresses_Cutting_Gutting_RPI.xlsx.
 
 Un port série ne peut être ouvert que par un seul programme à la fois.
 Pour tester en même temps que main.py, utilise un port série virtuel :
@@ -36,7 +38,6 @@ except ImportError:
 
 from config import (
     MODBUS_DEVICES, VFD_REGISTERS, GUTTING_REGISTERS, VISION_REGISTERS,
-    CUTTING_CONTROLLER_REGISTERS, CIP_MIRROR, modicon_offset,
     SERIAL_PORT, BAUDRATE, PARITY, STOPBITS, BYTESIZE,
 )
 
@@ -196,62 +197,46 @@ def build_gui():
             lambda v, a=addr, o=r["onoff_offset"]: sim.set_holding(a, o, v),
         )
 
-    # --- Cutting Controller ---
-    addr = MODBUS_DEVICES["cutting_controller"]
-    tab = ttk.Frame(notebook, padding=10)
-    notebook.add(tab, text="Cutting Controller")
-    r = CUTTING_CONTROLLER_REGISTERS
-    int_fields = [
-        ("RPM Blade", "rpm_blade_offset", 0, 5000),
-        ("RPM Wheel 1", "rpm_wheel1_offset", 0, 5000),
-        ("RPM Wheel 2", "rpm_wheel2_offset", 0, 5000),
-        ("Ejector state (0=idle,1=wait,2=fire)", "ejector_state_offset", 0, 2),
-        ("Alarm mask", "alarm_mask_offset", 0, 255),
-    ]
-    bool_fields = [
-        ("Motor Trip", "motor_trip_offset"),
-        ("Motor ON", "motor_on_offset"),
-        ("Belt running", "belt_offset"),
-        ("Belly (instantané)", "belly_offset"),
-    ]
-    row = 0
-    for label, offkey, minv, maxv in int_fields:
-        off = r[offkey]
-        add_int_field(
-            tab, row, label,
-            lambda a=addr, o=off: sim.get_input(a, o),
-            lambda v, a=addr, o=off: sim.set_input(a, o, v),
-            minv=minv, maxv=maxv,
-        )
-        row += 1
-    for label, offkey in bool_fields:
-        off = r[offkey]
-        add_bool_field(
-            tab, row, label,
-            lambda a=addr, o=off: sim.get_input(a, o),
-            lambda v, a=addr, o=off: sim.set_input(a, o, v),
-        )
-        row += 1
-
-    # --- Gutting Left / Right ---
+    # --- Gutting Left / Right (bloc complet : RPM, éjecteur, trip, alarmes...) ---
     for name in ("gutting_left", "gutting_right"):
         addr = MODBUS_DEVICES[name]
         tab = ttk.Frame(notebook, padding=10)
         notebook.add(tab, text=name.replace("_", " ").title())
         r = GUTTING_REGISTERS
-        add_int_field(
-            tab, 0, "Belly orientation (%)",
-            lambda a=addr, o=r["belly_pct_offset"]: sim.get_input(a, o),
-            lambda v, a=addr, o=r["belly_pct_offset"]: sim.set_input(a, o, v),
-            minv=0, maxv=r["belly_pct_scale"],
-        )
-        mirror = CIP_MIRROR[name]
-        onoff_offset = modicon_offset(mirror["on_status_address"])
-        add_bool_field(
-            tab, 1, "Machine ON/OFF",
-            lambda a=addr, o=onoff_offset: sim.get_holding(a, o),
-            lambda v, a=addr, o=onoff_offset: sim.set_holding(a, o, v),
-        )
+
+        int_fields = [
+            ("RPM Blade", "rpm_blade_offset", 0, 5000),
+            ("RPM Wheel 1", "rpm_wheel1_offset", 0, 5000),
+            ("RPM Wheel 2", "rpm_wheel2_offset", 0, 5000),
+            ("Ejector state (0=idle,1=wait,2=fire)", "ejector_state_offset", 0, 2),
+            ("CIP State (télémétrie)", "cip_state_offset", 0, 2),
+            ("Alarm mask", "alarm_mask_offset", 0, 255),
+        ]
+        bool_fields = [
+            ("Motor Trip", "motor_trip_offset"),
+            ("Motor ON (= miroir CIP)", "motor_on_offset"),
+            ("Belt running", "belt_offset"),
+            ("Belly (instantané)", "belly_offset"),
+        ]
+
+        row = 0
+        for label, offkey, minv, maxv in int_fields:
+            off = r[offkey]
+            add_int_field(
+                tab, row, label,
+                lambda a=addr, o=off: sim.get_input(a, o),
+                lambda v, a=addr, o=off: sim.set_input(a, o, v),
+                minv=minv, maxv=maxv,
+            )
+            row += 1
+        for label, offkey in bool_fields:
+            off = r[offkey]
+            add_bool_field(
+                tab, row, label,
+                lambda a=addr, o=off: sim.get_input(a, o),
+                lambda v, a=addr, o=off: sim.set_input(a, o, v),
+            )
+            row += 1
 
     # --- Vision Left / Right ---
     for name in ("vision_left", "vision_right"):
@@ -266,15 +251,15 @@ def build_gui():
             minv=0, maxv=999999,
         )
         add_int_field(
-            tab, 1, "Good",
-            lambda a=addr, o=r["good_offset"]: sim.get_input(a, o),
-            lambda v, a=addr, o=r["good_offset"]: sim.set_input(a, o, v),
-            minv=0, maxv=999999,
+            tab, 1, "Gutting Good/Bad",
+            lambda a=addr, o=r["good_bad_offset"]: sim.get_input(a, o),
+            lambda v, a=addr, o=r["good_bad_offset"]: sim.set_input(a, o, v),
+            minv=0, maxv=65535,
         )
         add_int_field(
-            tab, 2, "Bad",
-            lambda a=addr, o=r["bad_offset"]: sim.get_input(a, o),
-            lambda v, a=addr, o=r["bad_offset"]: sim.set_input(a, o, v),
+            tab, 2, "Ejected Fish",
+            lambda a=addr, o=r["ejected_fish_offset"]: sim.get_input(a, o),
+            lambda v, a=addr, o=r["ejected_fish_offset"]: sim.set_input(a, o, v),
             minv=0, maxv=999999,
         )
 

@@ -3,6 +3,8 @@ Configuration centrale du contrôleur Fish3 (Raspberry Pi).
 
 Tout ce qui dépend du câblage physique ou de l'adressage Modbus
 doit être modifié ICI uniquement, jamais dans les autres fichiers.
+
+Adresses conformes à Modbus_Addresses_Cutting_Gutting_RPI.xlsx.
 """
 
 # --- Bus RS485 (Modbus RTU maître) ---
@@ -13,24 +15,21 @@ STOPBITS = 1
 BYTESIZE = 8
 MODBUS_TIMEOUT = 1.0
 
-# --- Adresses esclaves Modbus ---
-# NOTE : le Cutting Controller (ESP32) est déployé par défaut en MB_SLAVE_ID=1 /
-# 19200 8E1 dans son config.h -> il faudra changer ces deux constantes côté
-# firmware (MB_SLAVE_ID -> 30, MB_BAUD -> 9600, MB_CONFIG -> SERIAL_8N1) pour
-# matcher le bus existant, puisque vfd1 occupe déjà l'adresse 1.
+# --- Adresses esclaves Modbus (Slave ID, d'après le fichier Excel) ---
 MODBUS_DEVICES = {
-    "vfd1": 1,           # Belt pocket
-    "vfd2": 2,           # Belt infeed
-    "cutting_controller": 30,  # ESP32-S3 Fish Cutting/Gutting Controller
-    "gutting_left": 10,   # Gutting Machine gauche : DOL ON/OFF, CIP Timer, belly %
-    "gutting_right": 11,  # Gutting Machine droite : idem
-    "vision_left": 12,    # Vision System gauche : fish counter, good/bad
-    "vision_right": 13,   # Vision System droite : idem
-    "elec_meter": 20,
-    "water_meter": 21,
+    "vfd1": 1,             # Belt pocket
+    "vfd2": 2,             # Belt infeed
+    "gutting_left": 3,     # Gutting Machine Left
+    "vision_left": 4,      # Vision System Left
+    "gutting_right": 5,    # Gutting Machine Right
+    "vision_right": 6,     # Vision System Right
 }
+# NOTE : Electricity Meter / Water Meter ne sont pas dans ce fichier Excel ->
+# retirés de MODBUS_DEVICES en attendant leurs vraies adresses.
 
 # --- CP-IO22 : mapping GPIO (à corriger avec le manuel officiel) ---
+# Inchangé : la machine "Cutting" (présence, DOL Trip, DOL Cutting ON/OFF,
+# CIP Cutting) reste pilotée en direct par la RPi, indépendamment du Modbus.
 GPIO_IN = {
     "presence_1": 4,
     "presence_2": 5,
@@ -46,94 +45,97 @@ GPIO_OUT = {
     "cip_hybrid_right": 22,
 }
 
-# --- Conversion adresses Modicon (4xxxx/3xxxx/1xxxx/0xxxx) -> offset 0-based pymodbus ---
-def modicon_offset(address: int) -> int:
-    """
-    Convertit une adresse Modicon (ex: 40010) en offset 0-based pour pymodbus.
-    4xxxx = holding register, 3xxxx = input register,
-    1xxxx = discrete input, 0xxxx/1-9999 = coil.
-    """
+# --- Conversion adresses "1xxxx/4xxxx/0xxxx" du fichier Excel -> offset 0-based ---
+# NOTE : le fichier Excel utilise 1xxxx pour les INPUT REGISTERS (pas les
+# discrete inputs du standard Modicon strict) -> convention interne au projet,
+# pas le standard Modicon officiel. On la garde telle quelle par cohérence
+# avec le document fourni.
+def modicon_offset(address) -> int:
+    """Convertit une adresse du fichier Excel (ex: 10011, 40001) en offset 0-based."""
+    if isinstance(address, str):
+        address = int(address)
     if address >= 40001:
-        return address - 40001
-    if address >= 30001:
-        return address - 30001
+        return address - 40001   # holding register
     if address >= 10001:
-        return address - 10001
-    return address - 1
+        return address - 10001   # input register (convention du fichier Excel)
+    return address - 1           # coil
 
+
+# --- Gutting Machine (Left=3, Right=5) — bloc complet, identique aux 2 machines ---
+# Correspond exactement au firmware ESP32-S3 "Fish Cutting/Gutting Controller".
+GUTTING_REGISTERS = {
+    # Input registers (10001-10019 -> offsets 0-18)
+    "input_start": 0,
+    "input_count": 19,
+    "rpm_blade_offset": 0,          # 10001
+    "rpm_wheel1_offset": 1,         # 10002
+    "rpm_wheel2_offset": 2,         # 10003
+    "input_mask_offset": 3,         # 10004
+    "output_mask_offset": 4,        # 10005
+    "ejector_state_offset": 5,      # 10006 (0 idle, 1 wait, 2 fire)
+    "ejector_count_lo_offset": 6,   # 10007
+    "ejector_count_hi_offset": 7,   # 10008
+    "cip_state_offset": 8,          # 10009 - télémétrie seule, pas utilisé pour piloter
+    "motor_trip_offset": 9,         # 10010
+    "motor_on_offset": 10,          # 10011 - utilisé comme miroir CIP (voir CIP_MIRROR)
+    "belt_offset": 11,              # 10012
+    "belly_offset": 12,             # 10013
+    "alarm_mask_offset": 13,        # 10014
+    "alarm_unack_offset": 14,       # 10015
+    "sys_state_offset": 15,         # 10016
+    "uptime_lo_offset": 16,         # 10017
+    "uptime_hi_offset": 17,         # 10018
+    "fw_version_offset": 18,        # 10019
+
+    # Holding registers (40001-40009 -> offsets 0-8)
+    # NOTE : le fichier Excel affiche "40002" en double pour plusieurs lignes
+    # (probablement une erreur de recopie) -> on suppose une suite logique
+    # 40001..40009, cohérente avec l'ordre de l'enum HR_* du firmware.
+    "hr_eject_delay_offset": 0,     # 40001
+    "hr_eject_duration_offset": 1,  # 40002
+    "hr_cip_on_offset": 2,          # 40003
+    "hr_cip_off_offset": 3,         # 40004
+    "hr_ppr_blade_offset": 4,       # 40005
+    "hr_ppr_wheel1_offset": 5,      # 40006
+    "hr_ppr_wheel2_offset": 6,      # 40007
+    "hr_blade_rpm_min_offset": 7,   # 40008
+    "hr_debounce_ms_offset": 8,     # 40009
+
+    # Coils (00001-00003 -> offsets 0-2)
+    "co_eject_enable_offset": 0,    # 00001
+    "co_cip_enable_offset": 1,      # 00002 - non utilisé (RPi pilote le CIP directement)
+    "co_alarm_ack_offset": 2,       # 00003
+}
+
+# --- Vision System (Left=4, Right=6) ---
+VISION_REGISTERS = {
+    "input_start": 0,
+    "input_count": 3,
+    "fish_counter_offset": 0,    # 10001
+    "good_bad_offset": 1,        # 10002 - registre combiné (pas good/bad séparés)
+    "ejected_fish_offset": 2,    # 10003
+    "hr_ml_model_offset": 0,     # 40001 (holding register séparé, R/W)
+}
 
 # --- Miroir direct état machine -> sortie CIP ---
-# "on_status_address" = adresse Modicon telle que documentée sur la Gutting Machine.
+# "Motor ON" (motor_on_offset, déjà lu dans le bloc input registers ci-dessus)
+# sert de signal pour piloter le CIP correspondant. Valeur par défaut à confirmer.
 CIP_MIRROR = {
-    "gutting_left": {
-        "on_status_address": 40010,
-        "register_type": "holding",       # holding | input | coil | discrete
-        "cip_output": "cip_hybrid_left",
-    },
-    "gutting_right": {
-        "on_status_address": 40011,        # à corriger avec la vraie adresse
-        "register_type": "holding",
-        "cip_output": "cip_hybrid_right",
-    },
+    "gutting_left": "cip_hybrid_left",
+    "gutting_right": "cip_hybrid_right",
 }
 
-# --- Cutting/Gutting Controller (ESP32-S3, monitoring télémétrie uniquement) ---
-# CIP volontairement absent : c'est la RPI qui pilote le CIP cutting (cip_cutting),
-# pas ce contrôleur -> on ignore IR_CIP_STATE / HR_CIP_ON / HR_CIP_OFF / CO_CIP_ENABLE.
-CUTTING_CONTROLLER_REGISTERS = {
-    "input_start": 0,
-    "input_count": 19,  # IR_COUNT du firmware (0..18)
-    # offsets dans le bloc lu (correspondent à l'enum IR_* du firmware) :
-    "rpm_blade_offset": 0,
-    "rpm_wheel1_offset": 1,
-    "rpm_wheel2_offset": 2,
-    "inputs_mask_offset": 3,
-    "outputs_mask_offset": 4,
-    "ejector_state_offset": 5,     # 0 idle, 1 wait, 2 fire
-    "ejector_count_lo_offset": 6,
-    "ejector_count_hi_offset": 7,
-    # offset 8 = IR_CIP_STATE -> ignoré volontairement
-    "motor_trip_offset": 9,
-    "motor_on_offset": 10,
-    "belt_offset": 11,
-    "belly_offset": 12,
-    "alarm_mask_offset": 13,
-    "alarm_unack_offset": 14,
-    "sys_state_offset": 15,
-    "uptime_lo_offset": 16,
-    "uptime_hi_offset": 17,
-    "fw_version_offset": 18,
-}
-
-
-# --- Registres Gutting Machine (belly %) et Vision System (compteurs) ---
-# Offsets à vérifier avec la doc réelle de chaque machine (valeurs de départ ici).
-GUTTING_REGISTERS = {
-    "input_start": 2,           # premier input register à lire (belly %)
-    "input_count": 1,
-    "belly_pct_offset": 0,
-    "belly_pct_scale": 100,
-}
-
-VISION_REGISTERS = {
-    "input_start": 0,           # premier input register à lire (compteurs)
-    "input_count": 3,
-    "fish_counter_offset": 0,
-    "good_offset": 1,
-    "bad_offset": 2,
-}
-
+# --- VFD1 / VFD2 ---
+# Le fichier Excel indique juste "Check VFD" pour l'adresse -> les vraies
+# adresses de registre restent à récupérer dans la doc Modbus du variateur.
 VFD_REGISTERS = {
-    "holding_start": 0,   # premier holding register à lire
+    "holding_start": 0,
     "holding_count": 2,
     "speed_offset": 0,
     "onoff_offset": 1,
 }
 
-
+# --- Cadences de boucle (secondes) ---
 GPIO_POLL_INTERVAL = 0.05
 MODBUS_POLL_INTERVAL = 0.5
 LOGIC_INTERVAL = 0.1
-
-# --- Seuils métier ---
-BELLY_ORIENTATION_THRESHOLD_PCT = 80

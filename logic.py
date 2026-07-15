@@ -32,8 +32,8 @@ def logic_thread(state: SharedState, stop_event: threading.Event):
         if trip_active:
             # Sécurité : le trip coupe tout le CIP + les 2 VFD, sans exception.
             state.request_gpio_out("cip_cutting", False)
-            for mirror_cfg in CIP_MIRROR.values():
-                state.request_gpio_out(mirror_cfg["cip_output"], False)
+            for cip_output in CIP_MIRROR.values():
+                state.request_gpio_out(cip_output, False)
             for vfd_name in MODBUS_DEVICES:
                 if "vfd" in vfd_name:
                     set_vfd_power(state, vfd_name, False)
@@ -43,10 +43,10 @@ def logic_thread(state: SharedState, stop_event: threading.Event):
             state.request_gpio_out("cip_cutting", bool(gpio_in.get("dol_cutting_onoff")))
 
             # Miroir direct pour chaque machine définie dans CIP_MIRROR
-            for device_name, mirror_cfg in CIP_MIRROR.items():
+            for device_name, cip_output in CIP_MIRROR.items():
                 data = modbus.get(device_name)
                 machine_on = bool(data.get("onoff")) if data else False
-                state.request_gpio_out(mirror_cfg["cip_output"], machine_on)
+                state.request_gpio_out(cip_output, machine_on)
 
         time.sleep(LOGIC_INTERVAL)
 

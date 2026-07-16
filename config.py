@@ -145,8 +145,8 @@ LOGIC_INTERVAL = 0.1
 MQTT_BROKER_HOST = "localhost"
 MQTT_BROKER_PORT = 1883          # 8883 si MQTT_USE_TLS = True
 MQTT_USE_TLS = False
-MQTT_USERNAME = "cfpp"             # ex: "fish3-rpi"
-MQTT_PASSWORD = "Cfpp2021"
+MQTT_USERNAME = None             # ex: "fish3-rpi"
+MQTT_PASSWORD = None
 MQTT_CLIENT_ID = "fish3-rpi-controller"
 MQTT_TOPIC_PREFIX = "fish3"
 MQTT_PUBLISH_INTERVAL = 1.0      # secondes entre 2 publications d'état
@@ -176,4 +176,28 @@ CIP_ZONE_DEFAULT_TIMES = {
     "cutting_on_time": 2000, "cutting_off_time": 8000,
     "hybrid_left_on_time": 2000, "hybrid_left_off_time": 8000,
     "hybrid_right_on_time": 2000, "hybrid_right_off_time": 8000,
+}
+
+# Mapping zone CIP -> topic MQTT / clés SharedState correspondantes.
+# Topics distincts des devices Modbus (MODBUS_DEVICES) car ce sont des
+# paramètres locaux (rpi_coils / rpi_holding / rpi_input), pas du Modbus.
+CIP_ZONE_MQTT_MAP = {
+    "cip_cutting": {
+        "enable_key": "cip_cutting_enable",
+        "on_time_key": "cutting_on_time",
+        "off_time_key": "cutting_off_time",
+        "state_key": "cip_cutting_state",
+    },
+    "cip_hybrid_left": {
+        "enable_key": "cip_hybrid_left_enable",
+        "on_time_key": "hybrid_left_on_time",
+        "off_time_key": "hybrid_left_off_time",
+        "state_key": "cip_hybrid_left_state",
+    },
+    "cip_hybrid_right": {
+        "enable_key": "cip_hybrid_right_enable",
+        "on_time_key": "hybrid_right_on_time",
+        "off_time_key": "hybrid_right_off_time",
+        "state_key": "cip_hybrid_right_state",
+    },
 }

@@ -11,6 +11,9 @@ Topics :
   Publication (retained, lecture seule) :
     <prefix>/<device>/state           -> JSON {"timestamp": ISO8601, ...valeurs...}
     <prefix>/gpio/state                -> JSON {"timestamp": ..., "in": {...}, "out": {...}}
+    <prefix>/cip_cutting/state         -> JSON {"timestamp": ..., "enable": bool, "on_time": ms, "off_time": ms, "state": 0/1/2}
+    <prefix>/cip_hybrid_left/state     -> idem
+    <prefix>/cip_hybrid_right/state    -> idem
 
   Abonnement (commande -> prend effet automatiquement) :
     <prefix>/vfd1/set/speed            -> payload = valeur numérique
@@ -22,6 +25,11 @@ Topics :
     <prefix>/gutting_right/set/<champ> -> idem
     <prefix>/vision_left/set/ml_model
     <prefix>/vision_right/set/ml_model
+    <prefix>/cip_cutting/set/enable     -> payload = "0"/"1"/"true"/"false"
+    <prefix>/cip_cutting/set/on_time    -> payload = valeur numérique (ms)
+    <prefix>/cip_cutting/set/off_time   -> payload = valeur numérique (ms)
+    <prefix>/cip_hybrid_left/set/<champ>  -> idem (enable, on_time, off_time)
+    <prefix>/cip_hybrid_right/set/<champ> -> idem
 
 NOTE API paho-mqtt (>=2.1) : callback API v2 (CallbackAPIVersion.VERSION2) —
 voir requirements.txt. Signatures on_connect/on_message conformes à cette version.
@@ -38,7 +46,7 @@ import paho.mqtt.client as mqtt
 from config import (
     MQTT_BROKER_HOST, MQTT_BROKER_PORT, MQTT_USE_TLS, MQTT_USERNAME,
     MQTT_PASSWORD, MQTT_CLIENT_ID, MQTT_TOPIC_PREFIX, MQTT_PUBLISH_INTERVAL,
-    MQTT_WRITABLE_FIELDS, MODBUS_DEVICES,
+    MQTT_WRITABLE_FIELDS, MODBUS_DEVICES, CIP_ZONE_MQTT_MAP,
 )
 from shared_state import SharedState
 
@@ -81,6 +89,11 @@ def mqtt_thread(state: SharedState, stop_event: threading.Event):
                     topic = f"{MQTT_TOPIC_PREFIX}/{name}/set/{field}"
                     client.subscribe(topic)
                     log.info("MQTT abonné : %s", topic)
+            for zone in CIP_ZONE_MQTT_MAP:
+                for field in ("enable", "on_time", "off_time"):
+                    topic = f"{MQTT_TOPIC_PREFIX}/{zone}/set/{field}"
+                    client.subscribe(topic)
+                    log.info("MQTT abonné : %s", topic)
         else:
             log.error("Échec connexion MQTT (code %s)", reason_code)
 
@@ -89,9 +102,24 @@ def mqtt_thread(state: SharedState, stop_event: threading.Event):
             parts = msg.topic.split("/")
             if len(parts) != 4 or parts[0] != MQTT_TOPIC_PREFIX or parts[2] != "set":
                 return
-            _, device, _, field = parts
+            _, name, _, field = parts
             payload = msg.payload.decode().strip()
 
+            if name in CIP_ZONE_MQTT_MAP:
+                zone_cfg = CIP_ZONE_MQTT_MAP[name]
+                if field == "enable":
+                    state.set_rpi_coil(zone_cfg["enable_key"], _parse_bool(payload))
+                elif field == "on_time":
+                    state.set_rpi_holding(zone_cfg["on_time_key"], int(float(payload)))
+                elif field == "off_time":
+                    state.set_rpi_holding(zone_cfg["off_time_key"], int(float(payload)))
+                else:
+                    log.warning("MQTT commande sur champ CIP inconnu: %s/%s", name, field)
+                    return
+                log.info("MQTT commande appliquée : %s/%s = %s", name, field, payload)
+                return
+
+            device = name
             if device not in MODBUS_DEVICES:
                 log.warning("MQTT commande sur device inconnu: %s", device)
                 return
@@ -137,6 +165,19 @@ def mqtt_thread(state: SharedState, stop_event: threading.Event):
                 "out": snap["gpio_out"],
             })
             client.publish(f"{MQTT_TOPIC_PREFIX}/gpio/state", gpio_payload, retain=True)
+
+            rpi_coils = snap["rpi_coils"]
+            rpi_holding = snap["rpi_holding"]
+            rpi_input = snap["rpi_input"]
+            for zone, zone_cfg in CIP_ZONE_MQTT_MAP.items():
+                cip_payload = json.dumps({
+                    "timestamp": timestamp,
+                    "enable": rpi_coils.get(zone_cfg["enable_key"]),
+                    "on_time": rpi_holding.get(zone_cfg["on_time_key"]),
+                    "off_time": rpi_holding.get(zone_cfg["off_time_key"]),
+                    "state": rpi_input.get(zone_cfg["state_key"]),
+                })
+                client.publish(f"{MQTT_TOPIC_PREFIX}/{zone}/state", cip_payload, retain=True)
 
             time.sleep(MQTT_PUBLISH_INTERVAL)
     finally:

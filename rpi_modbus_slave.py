@@ -14,7 +14,8 @@ et un datastore Modbus local :
 - coils / holding registers écrits en externe -> rpi_coils / rpi_holding
   (relus ensuite par logic_thread pour piloter les 3 zones CIP)
 
-NOTE API pymodbus : ce projet est figé sur la version 3.14.0 (voir requirements.txt).
+NOTE API pymodbus : ce projet est figé sur la version 3.12.0 (voir requirements.txt) —
+la 3.14+ a cassé l'API serveur (ModbusDeviceContext dépréciée au profit de SimData/SimDevice).
 """
 
 import asyncio

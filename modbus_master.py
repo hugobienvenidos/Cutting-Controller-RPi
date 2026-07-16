@@ -4,10 +4,11 @@ Thread Modbus RTU maître : interroge les esclaves sur le bus RS485
 
 Adresses conformes à Modbus_Addresses_Cutting_Gutting_RPI.xlsx.
 
-NOTE API pymodbus : ce projet est figé sur la version 3.14.0 (voir requirements.txt).
+NOTE API pymodbus : ce projet est figé sur la version 3.12.0 (voir requirements.txt).
 count et l'identifiant esclave sont keyword-only et se nomment "device_id"
-(anciennement "slave") dans cette version — l'API a déjà changé plusieurs fois,
-d'où le pin strict plutôt qu'un simple ">=".
+(anciennement "slave") dans cette version. La 3.14+ a cassé l'API serveur
+(ModbusDeviceContext dépréciée au profit de SimData/SimDevice), d'où le pin
+strict sur 3.12.0 plutôt qu'un ">=".
 """
 
 import logging

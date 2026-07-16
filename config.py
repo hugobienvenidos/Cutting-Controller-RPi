@@ -15,14 +15,15 @@ STOPBITS = 1
 BYTESIZE = 8
 MODBUS_TIMEOUT = 1.0
 
-# --- Adresses esclaves Modbus (Slave ID, d'après le fichier Excel) ---
+# --- Adresses esclaves Modbus (Slave ID, d'après Cutting-Gutting-Controllers-Registers-IO.xlsx) ---
 MODBUS_DEVICES = {
     "vfd1": 1,             # Belt pocket
     "vfd2": 2,             # Belt infeed
-    "gutting_left": 3,     # Gutting Machine Left
-    "vision_left": 4,      # Vision System Left
-    "gutting_right": 5,    # Gutting Machine Right
-    "vision_right": 6,     # Vision System Right
+    # 3 = la RPi elle-même (voir RPI_SLAVE_* plus bas) -> pas un device à interroger ici
+    "gutting_left": 4,     # Gutting Machine Left
+    "vision_left": 5,      # Vision System Left
+    "gutting_right": 6,    # Gutting Machine Right
+    "vision_right": 7,     # Vision System Right
 }
 # NOTE : Electricity Meter / Water Meter ne sont pas dans ce fichier Excel ->
 # retirés de MODBUS_DEVICES en attendant leurs vraies adresses.
@@ -77,7 +78,7 @@ GUTTING_REGISTERS = {
     "ejector_count_hi_offset": 7,   # 10008
     "cip_state_offset": 8,          # 10009 - télémétrie seule, pas utilisé pour piloter
     "motor_trip_offset": 9,         # 10010
-    "motor_on_offset": 10,          # 10011 - utilisé comme miroir CIP (voir CIP_MIRROR)
+    "motor_on_offset": 10,          # 10011 - télémétrie (ne pilote plus le CIP directement)
     "belt_offset": 11,              # 10012
     "belly_offset": 12,             # 10013
     "alarm_mask_offset": 13,        # 10014
@@ -117,13 +118,11 @@ VISION_REGISTERS = {
     "hr_ml_model_offset": 0,     # 40001 (holding register séparé, R/W)
 }
 
-# --- Miroir direct état machine -> sortie CIP ---
-# "Motor ON" (motor_on_offset, déjà lu dans le bloc input registers ci-dessus)
-# sert de signal pour piloter le CIP correspondant. Valeur par défaut à confirmer.
-CIP_MIRROR = {
-    "gutting_left": "cip_hybrid_left",
-    "gutting_right": "cip_hybrid_right",
-}
+# --- CIP ---
+# L'ancien miroir direct "Motor ON -> CIP" est remplacé par un cycle périodique
+# ON_TIME/OFF_TIME piloté par coils/holding registers (voir RPI_SLAVE_* plus bas
+# et la logique ZONES dans logic.py). "Motor ON" (motor_on_offset ci-dessus)
+# reste disponible en télémétrie mais ne pilote plus directement le CIP.
 
 # --- VFD1 / VFD2 ---
 # Le fichier Excel indique juste "Check VFD" pour l'adresse -> les vraies
@@ -139,3 +138,65 @@ VFD_REGISTERS = {
 GPIO_POLL_INTERVAL = 0.05
 MODBUS_POLL_INTERVAL = 0.5
 LOGIC_INTERVAL = 0.1
+
+# --- MQTT ---
+# À adapter à ton broker réel (adresse, port, identifiants, TLS).
+MQTT_BROKER_HOST = "localhost"
+MQTT_BROKER_PORT = 1883          # 8883 si MQTT_USE_TLS = True
+MQTT_USE_TLS = False
+MQTT_USERNAME = None             # ex: "fish3-rpi"
+MQTT_PASSWORD = None
+MQTT_CLIENT_ID = "fish3-rpi-controller"
+MQTT_TOPIC_PREFIX = "fish3"
+MQTT_PUBLISH_INTERVAL = 1.0      # secondes entre 2 publications d'état
+
+# Champs "holding register" exposés en écriture par appareil (topics de commande)
+MQTT_WRITABLE_FIELDS = {
+    "vfd": ["speed", "onoff"],
+    "gutting": [
+        "eject_delay", "eject_duration", "cip_on", "cip_off",
+        "ppr_blade", "ppr_wheel1", "ppr_wheel2", "blade_rpm_min", "debounce_ms",
+    ],
+    "vision": ["ml_model"],
+}
+
+# --- RPi en tant que Modbus SLAVE (adresse 3) de ses propres I/O ---
+# Transport : Modbus TCP par défaut (pas besoin d'un 2e adaptateur RS485).
+# Si tu préfères un 2e bus RS485 physique, dis-le et on adapte rpi_modbus_slave.py.
+RPI_SLAVE_ID = 3
+RPI_SLAVE_TCP_HOST = "0.0.0.0"   # écoute sur toutes les interfaces réseau
+RPI_SLAVE_TCP_PORT = 502          # port Modbus TCP standard (peut nécessiter root/setcap sous Linux)
+
+# Coils (00001-00003) — activation de chaque zone CIP, écrits par un maître externe
+RPI_SLAVE_COILS = {
+    "cip_cutting_enable": 0,        # 00001
+    "cip_hybrid_left_enable": 1,    # 00002
+    "cip_hybrid_right_enable": 2,   # 00003
+}
+
+# Input registers (10001-10006) — télémétrie en lecture seule pour un maître externe
+RPI_SLAVE_INPUT_REGISTERS = {
+    "presence_mask": 0,           # 10001 (bit0-3 = presence_1..4)
+    "dol_blades_trip": 1,         # 10002
+    "dol_blades_state": 2,        # 10003
+    "cip_cutting_state": 3,       # 10004 (0 idle, 1 on, 2 off)
+    "cip_hybrid_left_state": 4,   # 10005
+    "cip_hybrid_right_state": 5,  # 10006
+}
+
+# Holding registers (40001-40006) — durées de cycle CIP en ms, réglables par un maître externe
+RPI_SLAVE_HOLDING_REGISTERS = {
+    "cutting_on_time": 0,          # 40001
+    "cutting_off_time": 1,         # 40002
+    "hybrid_left_on_time": 2,      # 40003
+    "hybrid_left_off_time": 3,     # 40004
+    "hybrid_right_on_time": 4,     # 40005
+    "hybrid_right_off_time": 5,    # 40006
+}
+
+# Valeurs par défaut du cycle CIP (ms) au démarrage, avant tout réglage externe
+RPI_SLAVE_DEFAULT_HOLDING = {
+    "cutting_on_time": 2000, "cutting_off_time": 8000,
+    "hybrid_left_on_time": 2000, "hybrid_left_off_time": 8000,
+    "hybrid_right_on_time": 2000, "hybrid_right_off_time": 8000,
+}

@@ -142,6 +142,54 @@ def build_dashboard(state: SharedState, stop_event: threading.Event):
         add_bool_row(tab, row, name, lambda s, n=name: s["gpio_out"].get(n))
         row += 1
 
+    # --- Onglet "RPi (esclave Modbus, adresse 3)" ---
+    tab = ttk.Frame(notebook, padding=10)
+    notebook.add(tab, text="RPi (esclave)")
+    row = 0
+    ttk.Label(tab, text="Coils ENABLE (écrits par un maître externe)", font=("TkDefaultFont", 10, "underline")).grid(
+        row=row, column=0, columnspan=2, sticky="w", pady=(0, 6)
+    )
+    row += 1
+    for coil_name in ("cip_cutting_enable", "cip_hybrid_left_enable", "cip_hybrid_right_enable"):
+        add_bool_row(tab, row, coil_name, lambda s, n=coil_name: s["rpi_coils"].get(n))
+        row += 1
+
+    row += 1
+    ttk.Label(tab, text="Holding registers (durées de cycle CIP, ms)", font=("TkDefaultFont", 10, "underline")).grid(
+        row=row, column=0, columnspan=2, sticky="w", pady=(6, 6)
+    )
+    row += 1
+    for hr_name in (
+        "cutting_on_time", "cutting_off_time",
+        "hybrid_left_on_time", "hybrid_left_off_time",
+        "hybrid_right_on_time", "hybrid_right_off_time",
+    ):
+        add_value_row(tab, row, hr_name, lambda s, n=hr_name: s["rpi_holding"].get(n))
+        row += 1
+
+    row += 1
+    ttk.Label(tab, text="Télémétrie (input registers)", font=("TkDefaultFont", 10, "underline")).grid(
+        row=row, column=0, columnspan=2, sticky="w", pady=(6, 6)
+    )
+    row += 1
+    add_value_row(tab, row, "Presence mask", lambda s: s["rpi_input"].get("presence_mask"), fmt="0b{:04b}")
+    row += 1
+    add_bool_row(tab, row, "DOL Blades Trip", lambda s: bool(s["rpi_input"].get("dol_blades_trip")),
+                 true_text="TRIP", false_text="OK", alarm_style=True)
+    row += 1
+    add_bool_row(tab, row, "DOL Blades State", lambda s: bool(s["rpi_input"].get("dol_blades_state")))
+    row += 1
+    for state_name, label in (
+        ("cip_cutting_state", "CIP Cutting State"),
+        ("cip_hybrid_left_state", "CIP Hybrid Left State"),
+        ("cip_hybrid_right_state", "CIP Hybrid Right State"),
+    ):
+        add_value_row(
+            tab, row, label,
+            lambda s, n=state_name: {0: "idle", 1: "on", 2: "off"}.get(s["rpi_input"].get(n), "—"),
+        )
+        row += 1
+
     # --- Onglets VFD1 / VFD2 ---
     for vfd_name in ("vfd1", "vfd2"):
         tab = ttk.Frame(notebook, padding=10)

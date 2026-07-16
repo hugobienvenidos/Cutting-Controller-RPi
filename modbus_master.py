@@ -106,6 +106,12 @@ def modbus_thread(state: SharedState, stop_event: threading.Event):
                             write_vfd_speed(client, addr, fields["speed"])
                         if "onoff" in fields:
                             write_vfd_onoff(client, addr, fields["onoff"])
+                    elif "gutting" in name:
+                        for field, value in fields.items():
+                            write_gutting_param(client, addr, field, value)
+                    elif "vision" in name:
+                        for field, value in fields.items():
+                            write_vision_param(client, addr, field, value)
                 except Exception as exc:
                     log.warning("Erreur écriture Modbus sur %s: %s", name, exc)
                     state.set_modbus_error(name, str(exc))
@@ -143,3 +149,19 @@ def write_vfd_speed(client: ModbusSerialClient, addr: int, speed_rpm: int):
 
 def write_vfd_onoff(client: ModbusSerialClient, addr: int, state_on: bool):
     client.write_register(VFD_REGISTERS["onoff_offset"], 1 if state_on else 0, device_id=addr)
+
+
+def write_gutting_param(client: ModbusSerialClient, addr: int, field: str, value):
+    """Écrit un paramètre R/W (holding register) d'une Gutting Machine, ex: 'eject_delay'."""
+    offset_key = f"hr_{field}_offset"
+    if offset_key not in GUTTING_REGISTERS:
+        raise ValueError(f"Champ inconnu pour Gutting Machine: {field}")
+    client.write_register(GUTTING_REGISTERS[offset_key], int(value), device_id=addr)
+
+
+def write_vision_param(client: ModbusSerialClient, addr: int, field: str, value):
+    """Écrit un paramètre R/W (holding register) d'un Vision System, ex: 'ml_model'."""
+    offset_key = f"hr_{field}_offset"
+    if offset_key not in VISION_REGISTERS:
+        raise ValueError(f"Champ inconnu pour Vision System: {field}")
+    client.write_register(VISION_REGISTERS[offset_key], int(value), device_id=addr)

@@ -1,5 +1,5 @@
 """
-État partagé entre les threads GPIO, Modbus, logique métier et esclave Modbus RPi.
+État partagé entre les threads GPIO, Modbus et logique métier.
 
 C'est le seul point de contact entre les threads : personne ne s'appelle
 directement, tout passe par cet objet protégé par un lock.
@@ -8,7 +8,7 @@ directement, tout passe par cet objet protégé par un lock.
 import copy
 import threading
 
-from config import RPI_SLAVE_DEFAULT_HOLDING
+from config import CIP_ZONE_DEFAULT_TIMES
 
 
 class SharedState:
@@ -21,14 +21,14 @@ class SharedState:
             "modbus_errors": {},  # dernier message d'erreur par device (ou None si OK)
             "modbus_out": {},  # demandes d'écriture en attente : {device: {"speed": 1200}}
 
-            # --- Rôle "esclave" de la RPi (adresse 3), piloté par un maître externe ---
+            # --- Paramètres CIP locaux (réglés depuis le dashboard, pas de Modbus slave) ---
             "rpi_coils": {
                 "cip_cutting_enable": False,
                 "cip_hybrid_left_enable": False,
                 "cip_hybrid_right_enable": False,
             },
-            "rpi_holding": dict(RPI_SLAVE_DEFAULT_HOLDING),  # on/off times CIP (ms)
-            "rpi_input": {  # télémétrie calculée par logic_thread, exposée en lecture
+            "rpi_holding": dict(CIP_ZONE_DEFAULT_TIMES),  # on/off times CIP (ms)
+            "rpi_input": {  # télémétrie calculée par logic_thread, affichée dans le dashboard
                 "presence_mask": 0,
                 "dol_blades_trip": 0,
                 "dol_blades_state": 0,
@@ -69,9 +69,9 @@ class SharedState:
             self._data["modbus_out"] = {}
             return pending
 
-    # --- Rôle esclave RPi (adresse 3) ---
+    # --- Paramètres CIP locaux (lus/écrits par le dashboard et logic_thread) ---
     def set_rpi_coil(self, name: str, value: bool):
-        """Appelé par rpi_slave_thread quand un maître externe écrit un coil."""
+        """Appelé par le dashboard quand l'utilisateur active/désactive une zone CIP."""
         with self._lock:
             self._data["rpi_coils"][name] = bool(value)
 
@@ -80,7 +80,7 @@ class SharedState:
             return dict(self._data["rpi_coils"])
 
     def set_rpi_holding(self, name: str, value):
-        """Appelé par rpi_slave_thread quand un maître externe écrit un holding register."""
+        """Appelé par le dashboard quand l'utilisateur règle une durée de cycle CIP."""
         with self._lock:
             self._data["rpi_holding"][name] = value
 
@@ -89,7 +89,7 @@ class SharedState:
             return dict(self._data["rpi_holding"])
 
     def set_rpi_input(self, name: str, value):
-        """Appelé par logic_thread pour publier une valeur de télémétrie (lue par rpi_slave_thread)."""
+        """Appelé par logic_thread pour publier une valeur de télémétrie (affichée dans le dashboard)."""
         with self._lock:
             self._data["rpi_input"][name] = value
 

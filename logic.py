@@ -1,15 +1,15 @@
 """
 Thread logique métier : c'est le SEUL fichier où doivent vivre les règles.
 
-Nouvelle logique CIP (3 zones indépendantes : Cutting, Hybrid Left, Hybrid Right) :
-- Chaque zone est activée/désactivée via un coil (rpi_coils), écrit par un
-  maître Modbus externe via rpi_slave_thread (adresse 3).
-- Chaque zone cycle ON_TIME/OFF_TIME (ms), réglable via holding registers
-  (rpi_holding), également piloté par ce même maître externe.
+Logique CIP (3 zones indépendantes : Cutting, Hybrid Left, Hybrid Right) :
+- Chaque zone est activée/désactivée via un coil local (rpi_coils), réglé
+  depuis le dashboard (pas de Modbus slave, la RPi reste uniquement Maître).
+- Chaque zone cycle ON_TIME/OFF_TIME (ms), réglable via des holding registers
+  locaux (rpi_holding), également modifiables depuis le dashboard.
 - DOL Trip coupe TOUT (CIP + VFD), quel que soit l'état des coils ENABLE.
 - L'état de chaque zone (0 idle, 1 on, 2 off) et la télémétrie GPIO
-  (presence, DOL Blades Trip/State) sont publiés dans rpi_input, exposés en
-  lecture par rpi_slave_thread.
+  (presence, DOL Blades Trip/State) sont publiés dans rpi_input, affichés
+  dans le dashboard.
 """
 
 import logging
@@ -79,7 +79,7 @@ def logic_thread(state: SharedState, stop_event: threading.Event):
             state.request_gpio_out(cfg["gpio_output"], output)
             state.set_rpi_input(cfg["state_key"], state_code)
 
-        # --- Télémétrie exposée en Modbus esclave (adresse 3) ---
+        # --- Télémétrie affichée dans le dashboard ---
         presence_mask = 0
         for i in range(1, 5):
             if gpio_in.get(f"presence_{i}"):

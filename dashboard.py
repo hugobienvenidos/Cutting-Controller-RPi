@@ -1,9 +1,11 @@
 """
 dashboard.py — Interface de monitoring temps réel du contrôleur Fish3 (RPi).
 
-Affiche en lecture seule l'état de tous les esclaves Modbus (VFD1/2, Gutting
-Left/Right, Vision Left/Right) ainsi que les entrées/sorties GPIO du CP-IO22,
-avec rafraîchissement automatique.
+Affiche l'état de tous les esclaves Modbus (VFD1/2, Gutting Left/Right, Vision
+Left/Right) et des GPIO du CP-IO22 en lecture seule, avec rafraîchissement
+automatique. Les paramètres CIP (activation par zone, durées ON/OFF) sont en
+revanche éditables directement ici — ce sont des réglages purement locaux à
+la RPi, pas exposés en Modbus.
 
 IMPORTANT : doit tourner sur le thread PRINCIPAL (contrainte Tkinter) —
 voir comment main.py l'appelle. Nécessite un environnement graphique sur
@@ -83,7 +85,39 @@ def build_dashboard(state: SharedState, stop_event: threading.Event):
 
         refreshers.append(refresh)
 
-    # --- Onglet "Vue d'ensemble" ---
+    def add_editable_bool_row(parent, row, label, get_fn, set_fn):
+        """Checkbox éditable : change immédiatement la valeur au clic."""
+        ttk.Label(parent, text=label).grid(row=row, column=0, sticky="w", padx=6, pady=3)
+        var = tk.BooleanVar(value=bool(get_fn(snap_holder["data"])))
+        chk = ttk.Checkbutton(parent, variable=var, command=lambda: set_fn(var.get()))
+        chk.grid(row=row, column=1, sticky="w", padx=6)
+
+        def refresh():
+            # Ne pas écraser la case pendant que l'utilisateur interagit avec elle
+            if root.focus_get() is not chk:
+                try:
+                    var.set(bool(get_fn(snap_holder["data"])))
+                except Exception:
+                    pass
+
+        refreshers.append(refresh)
+
+    def add_editable_int_row(parent, row, label, get_fn, set_fn, minv=0, maxv=600000):
+        """Spinbox + bouton Appliquer : la valeur ne change qu'au clic (évite les à-coups)."""
+        ttk.Label(parent, text=label).grid(row=row, column=0, sticky="w", padx=6, pady=3)
+        var = tk.IntVar(value=get_fn(snap_holder["data"]) or 0)
+        spin = ttk.Spinbox(parent, from_=minv, to=maxv, textvariable=var, width=10)
+        spin.grid(row=row, column=1, padx=6)
+        ttk.Button(parent, text="Appliquer", command=lambda: set_fn(var.get())).grid(row=row, column=2, padx=4)
+
+        def refresh():
+            if root.focus_get() is not spin:
+                try:
+                    var.set(get_fn(snap_holder["data"]) or 0)
+                except Exception:
+                    pass
+
+        refreshers.append(refresh)
     tab = ttk.Frame(notebook, padding=10)
     notebook.add(tab, text="Vue d'ensemble")
 
@@ -142,33 +176,46 @@ def build_dashboard(state: SharedState, stop_event: threading.Event):
         add_bool_row(tab, row, name, lambda s, n=name: s["gpio_out"].get(n))
         row += 1
 
-    # --- Onglet "RPi (esclave Modbus, adresse 3)" ---
+    # --- Onglet "Paramètres CIP" (local, pas de Modbus slave) ---
     tab = ttk.Frame(notebook, padding=10)
-    notebook.add(tab, text="RPi (esclave)")
+    notebook.add(tab, text="Paramètres CIP")
     row = 0
-    ttk.Label(tab, text="Coils ENABLE (écrits par un maître externe)", font=("TkDefaultFont", 10, "underline")).grid(
+    ttk.Label(tab, text="Activation par zone", font=("TkDefaultFont", 10, "underline")).grid(
         row=row, column=0, columnspan=2, sticky="w", pady=(0, 6)
     )
     row += 1
-    for coil_name in ("cip_cutting_enable", "cip_hybrid_left_enable", "cip_hybrid_right_enable"):
-        add_bool_row(tab, row, coil_name, lambda s, n=coil_name: s["rpi_coils"].get(n))
+    for coil_name, coil_label in (
+        ("cip_cutting_enable", "CIP Cutting"),
+        ("cip_hybrid_left_enable", "CIP Hybrid Left"),
+        ("cip_hybrid_right_enable", "CIP Hybrid Right"),
+    ):
+        add_editable_bool_row(
+            tab, row, coil_label,
+            lambda s, n=coil_name: s["rpi_coils"].get(n),
+            lambda v, n=coil_name: state.set_rpi_coil(n, v),
+        )
         row += 1
 
     row += 1
-    ttk.Label(tab, text="Holding registers (durées de cycle CIP, ms)", font=("TkDefaultFont", 10, "underline")).grid(
+    ttk.Label(tab, text="Durées de cycle CIP (ms)", font=("TkDefaultFont", 10, "underline")).grid(
         row=row, column=0, columnspan=2, sticky="w", pady=(6, 6)
     )
     row += 1
-    for hr_name in (
-        "cutting_on_time", "cutting_off_time",
-        "hybrid_left_on_time", "hybrid_left_off_time",
-        "hybrid_right_on_time", "hybrid_right_off_time",
+    for hr_name, hr_label in (
+        ("cutting_on_time", "CIP Cutting ON_TIME"), ("cutting_off_time", "CIP Cutting OFF_TIME"),
+        ("hybrid_left_on_time", "CIP Hybrid Left ON_TIME"), ("hybrid_left_off_time", "CIP Hybrid Left OFF_TIME"),
+        ("hybrid_right_on_time", "CIP Hybrid Right ON_TIME"), ("hybrid_right_off_time", "CIP Hybrid Right OFF_TIME"),
     ):
-        add_value_row(tab, row, hr_name, lambda s, n=hr_name: s["rpi_holding"].get(n))
+        add_editable_int_row(
+            tab, row, hr_label,
+            lambda s, n=hr_name: s["rpi_holding"].get(n),
+            lambda v, n=hr_name: state.set_rpi_holding(n, v),
+            minv=0, maxv=600000,
+        )
         row += 1
 
     row += 1
-    ttk.Label(tab, text="Télémétrie (input registers)", font=("TkDefaultFont", 10, "underline")).grid(
+    ttk.Label(tab, text="Télémétrie", font=("TkDefaultFont", 10, "underline")).grid(
         row=row, column=0, columnspan=2, sticky="w", pady=(6, 6)
     )
     row += 1

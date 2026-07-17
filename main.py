@@ -8,15 +8,17 @@ Démarre 4 threads indépendants :
 - mqtt_thread   : publie l'état + s'abonne aux commandes des paramètres writable
 
 Les paramètres CIP (activation par zone, durées ON/OFF) sont des réglages
-locaux, gérés uniquement via le dashboard — pas de Modbus slave pour ça.
+locaux, gérés via MQTT ou directement dans le SharedState — pas de Modbus
+slave pour ça.
 
-Le thread principal lance le dashboard de monitoring (Tkinter) — contrainte
-obligatoire, Tkinter ne peut tourner que sur le thread principal.
+Le thread principal lance le dashboard de monitoring (Pygame) — contrainte
+obligatoire, Pygame veut son event loop sur le thread principal.
 
 Prérequis :
 - pigpiod démarré : `sudo pigpiod`
 - pymodbus installé : `pip install pymodbus==3.12.0`
 - paho-mqtt installé : `pip install paho-mqtt`
+- pygame installé : `pip install pygame`
 - Environnement graphique pour le dashboard (bureau RPi OS, ou `ssh -X`/VNC)
 
 Utilisation :
@@ -72,9 +74,9 @@ def main():
         except KeyboardInterrupt:
             pass
     else:
-        from dashboard import build_dashboard
-        log.info("Dashboard graphique démarré (ferme la fenêtre pour arrêter)")
-        build_dashboard(state, stop_event)  # bloque ici jusqu'à fermeture de la fenêtre
+        from pygame_dashboard import run_pygame_dashboard
+        log.info("Dashboard Pygame démarré (Echap ou ferme la fenêtre pour arrêter)")
+        run_pygame_dashboard(state, stop_event)  # bloque ici jusqu'à fermeture de la fenêtre
 
     log.info("Arrêt demandé, fermeture propre...")
     stop_event.set()
